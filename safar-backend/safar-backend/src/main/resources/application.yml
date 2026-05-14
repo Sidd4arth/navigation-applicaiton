@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: safar-backend
+  profiles:
+    active: dev
+
+  # Email Configuration (Gmail SMTP - FREE)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: krishchourasia2005@gmail.com
+    password: eiur xylu ilwm mrps
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enabled: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:c2FmYXItYmFja2VuZC1zZWNyZXQta2V5LWZvci1qd3QtdG9rZW4tZ2VuZXJhdGlvbi1wbGVhc2UtY2hhbmdlLWluLXByb2R1Y3Rpb24=}
+    expiration-ms: 86400000
+    refresh-expiration-ms: 604800000
+  
+  maps:
+    openroute-api-key: eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImUxNjlhZTgwNmMxODRlNDE5OWMzNzZiZTA1YTlmYjc2IiwiaCI6Im11cm11cjY0In0=
+    weather-api-key: 6fe83baed27fc6f19858080e810e2bc8
+  
+  scoring:
+    max-danger: 10.0
+    zone-buffer-meters: 150
+    report-buffer-meters: 200
+    report-days-window: 7
+
+  sms:
+    fast2sms-api-key: lCD8aITSNqUbeWXFcPV6itLJ3ZsfvpO1HnKhw4RyuGo0m9zB5Ysd1tSQ5HRjyhATCeN3LIoE9wPlr0g4
+    enabled: ${SMS_ENABLED:false}
+
+  email:
+    enabled: ${EMAIL_ENABLED:false}
+    authority-email: ${AUTHORITY_EMAIL:}
+    from-name: SAFAR Safety Alert
+
+  sos:
+    expiry-minutes: 30
+    location-broadcast-interval-seconds: 5
+    app-base-url: ${APP_BASE_URL:https://safar.app}
