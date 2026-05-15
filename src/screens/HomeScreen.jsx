@@ -71,22 +71,40 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
         cityContext = cityData.address?.city || cityData.address?.town || cityData.address?.state || '';
       } catch (e) { console.warn('Could not get city context', e); }
 
-      // Geocoding helper with local city biasing (Fuzzy + India Locked)
+      // Geocoding: 4-strategy progressive fallback so obscure/abbreviated names still resolve
       const geocode = async (query) => {
-        const fullQuery = cityContext ? `${query}, ${cityContext}` : query;
-        // Bias search to 0.2 degrees (~20km) around user for higher precision
-        const vb = `${userLng - 0.2},${userLat - 0.2},${userLng + 0.2},${userLat + 0.2}`;
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&viewbox=${vb}&countrycodes=in&limit=1`);
-        const data = await res.json();
-        if (data && data.length > 0) {
-          return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), address: data[0].display_name };
+        const attempt = async (q, params = '') => {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=3&${params}&q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            if (data?.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), address: data[0].display_name };
+          } catch {}
+          return null;
+        };
+
+        // 1. City-context + soft viewbox (bounded=0 means viewbox just biases, not restricts)
+        if (cityContext) {
+          const vb = `${userLng - 0.5},${userLat - 0.5},${userLng + 0.5},${userLat + 0.5}`;
+          const r = await attempt(`${query}, ${cityContext}`, `viewbox=${vb}&bounded=0&countrycodes=in`);
+          if (r) return r;
+          await sleep(300);
         }
-        // Fallback to broader India search
-        const res2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&limit=1`);
-        const data2 = await res2.json();
-        if (data2 && data2.length > 0) {
-          return { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon), address: data2[0].display_name };
-        }
+
+        // 2. Viewbox-biased search (no city, soft bound, India)
+        const vb = `${userLng - 1},${userLat - 1},${userLng + 1},${userLat + 1}`;
+        const r2 = await attempt(query, `viewbox=${vb}&bounded=0&countrycodes=in`);
+        if (r2) return r2;
+        await sleep(300);
+
+        // 3. India-wide, no viewbox
+        const r3 = await attempt(query, 'countrycodes=in');
+        if (r3) return r3;
+        await sleep(300);
+
+        // 4. Global fallback — no restrictions at all
+        const r4 = await attempt(query, '');
+        if (r4) return r4;
+
         throw new Error('Location not found');
       };
 
