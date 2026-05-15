@@ -60,8 +60,12 @@ function ChangeView({ center, route }) {
   return null;
 }
 
-export default function SafetyMap({ zones = [], reports = [], userLat, userLng, route }) {
+export default function SafetyMap({ zones = [], reports = [], userLat, userLng, route, routes = [] }) {
   const center = [userLat || 22.7196, userLng || 75.8577];
+
+  // Build a sorted list: unselected routes first (bottom), selected route last (top)
+  const unselectedRoutes = routes.filter(r => r && r.encodedPolyline && r.routeId !== route?.routeId);
+  const selectedRouteObj = routes.find(r => r && r.routeId === route?.routeId) || route;
 
   return (
     <div style={{ width: '100%', height: '100%', background: '#000', position: 'relative' }}>
@@ -79,7 +83,7 @@ export default function SafetyMap({ zones = [], reports = [], userLat, userLng, 
           attribution='&copy; Google Maps'
         />
 
-        {/* Safe/Unsafe Zones - NO POPUPS here to avoid blocking clicks */}
+        {/* Safe/Unsafe Zones */}
         {zones.map((zone) => (
           <Circle
             key={zone.id}
@@ -132,18 +136,42 @@ export default function SafetyMap({ zones = [], reports = [], userLat, userLng, 
           })}
         />
 
-        {/* Selected Route */}
-        {route && route.encodedPolyline && (
-          <Polyline
-            positions={decodePolyline(route.encodedPolyline)}
-            pathOptions={{
-              color: route.safetyColor || '#fff',
-              weight: 6,
-              opacity: 0.9,
-              lineCap: 'round',
-            }}
-          />
-        )}
+        {/* Unselected routes — drawn below, dimmed */}
+        {unselectedRoutes.map((r) => {
+          const style = r.style || {};
+          const dash = style.dashPattern ? style.dashPattern.join(' ') : null;
+          return (
+            <Polyline
+              key={r.routeId}
+              positions={decodePolyline(r.encodedPolyline)}
+              pathOptions={{
+                color: style.strokeColor || '#888888',
+                weight: style.strokeWidth || 4,
+                opacity: 0.35,
+                lineCap: 'round',
+                dashArray: dash,
+              }}
+            />
+          );
+        })}
+
+        {/* Selected route — drawn on top at full opacity */}
+        {selectedRouteObj && selectedRouteObj.encodedPolyline && (() => {
+          const style = selectedRouteObj.style || {};
+          const dash = style.dashPattern ? style.dashPattern.join(' ') : null;
+          return (
+            <Polyline
+              positions={decodePolyline(selectedRouteObj.encodedPolyline)}
+              pathOptions={{
+                color: style.strokeColor || '#ffffff',
+                weight: style.strokeWidth || 6,
+                opacity: style.opacity ?? 1.0,
+                lineCap: 'round',
+                dashArray: dash,
+              }}
+            />
+          );
+        })()}
       </MapContainer>
     </div>
   );

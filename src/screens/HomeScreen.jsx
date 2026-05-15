@@ -217,54 +217,64 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
                 {selectedRoute && <span onClick={() => setSelectedRoute(null)} style={{ cursor:'pointer', color:COLORS.text }}>CHANGE</span>}
               </div>
               
-              {routes.filter(r => r && (!selectedRoute || r.routeId === selectedRoute.routeId)).map(r => (
-                <div key={r.routeId || Math.random()} id={`route-${r.routeId}`} onClick={() => setSelectedRoute(r)} style={{
-                  padding:'12px',
-                  background: selectedRoute?.routeId===r.routeId ? COLORS.bg : COLORS.bgCard,
-                  border: `1px solid ${selectedRoute?.routeId===r.routeId ? (r.safetyColor || COLORS.safe) : COLORS.borderMid}`,
-                  cursor:'pointer', fontFamily:'JetBrains Mono, monospace',
-                  transition:'all 0.2s ease'
-                }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
-                    {r.recommended && <span style={{ fontSize:8, border:`1px solid ${COLORS.safe}`, color:COLORS.safe, padding:'1px 3px' }}>REC</span>}
-                    <span style={{ fontSize:8, background:(r.safetyColor || COLORS.text), color:COLORS.bg, padding:'1px 3px', fontWeight:600 }}>{r.safetyLabel || 'STANDARD'}</span>
+              {routes.filter(r => r && (!selectedRoute || r.routeId === selectedRoute.routeId)).map(r => {
+                  const lineColor = r.style?.strokeColor || r.safetyColor || COLORS.text;
+                  const rankSymbol = ['①','②','③'][( r.rank || 1) - 1] || `#${r.rank}`;
+                  return (
+                  <div key={r.routeId || Math.random()} id={`route-${r.routeId}`} onClick={() => setSelectedRoute(r)} style={{
+                    padding:'12px',
+                    background: selectedRoute?.routeId===r.routeId ? COLORS.bg : COLORS.bgCard,
+                    border: `1px solid ${selectedRoute?.routeId===r.routeId ? lineColor : COLORS.borderMid}`,
+                    cursor:'pointer', fontFamily:'JetBrains Mono, monospace',
+                    transition:'all 0.2s ease'
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                      <span style={{ fontSize:14, color:lineColor, fontWeight:800, flexShrink:0 }}>{rankSymbol}</span>
+                      {r.recommended && <span style={{ fontSize:8, border:`1px solid ${COLORS.safe}`, color:COLORS.safe, padding:'1px 3px' }}>REC</span>}
+                      <span style={{ fontSize:8, background: lineColor, color: COLORS.bg, padding:'1px 4px', fontWeight:700 }}>{r.safetyLabel || 'STANDARD'}</span>
+                      {r.style?.lineType && <span style={{ fontSize:8, color:COLORS.textMuted, marginLeft:'auto' }}>{r.style.lineType}</span>}
+                    </div>
+                    <div style={{ fontSize:12, color:COLORS.text, marginBottom:2, fontWeight:600 }}>{r.destination?.address?.split(',')[0] || 'Destination'}</div>
+                    {r.comparisonText && (
+                      <div style={{ fontSize:10, color: r.recommended ? COLORS.safe : COLORS.textMuted, marginBottom:4, fontStyle:'italic' }}>
+                        {r.comparisonText}
+                      </div>
+                    )}
+                    <div style={{ display:'flex', gap:12, fontSize:11, color:COLORS.textMuted, marginBottom:selectedRoute?.routeId===r.routeId ? 12 : 0 }}>
+                      <span>{r.duration?.text || 'N/A'}</span>
+                      <span>{r.distance?.text || 'N/A'}</span>
+                      <span style={{ color: lineColor, fontWeight:600 }}>{((r.safetyScore || 0)*100).toFixed(0)}% Safe</span>
+                    </div>
+                    
+                    {selectedRoute?.routeId===r.routeId && r.origin && r.destination && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const start = `${r.origin.lat},${r.origin.lng}`;
+                          const end = `${r.destination.lat},${r.destination.lng}`;
+                          const url = `https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=walking`;
+                          window.location.href = url;
+                        }}
+                        style={{
+                          width:'100%', padding:'12px', background:COLORS.text, color:COLORS.bg,
+                          border:'none', fontSize:11, fontWeight:800, cursor:'pointer',
+                          fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase',
+                          boxShadow:'0 4px 12px rgba(255,255,255,0.1)'
+                        }}
+                      >
+                        🚀 START NAVIGATION
+                      </button>
+                    )}
                   </div>
-                  <div style={{ fontSize:12, color:COLORS.text, marginBottom:4, fontWeight:600 }}>{r.destination?.address?.split(',')[0] || 'Destination'}</div>
-                  <div style={{ display:'flex', gap:12, fontSize:11, color:COLORS.textMuted, marginBottom:selectedRoute?.routeId===r.routeId ? 12 : 0 }}>
-                    <span>{r.duration?.text || 'N/A'}</span>
-                    <span>{r.distance?.text || 'N/A'}</span>
-                    <span style={{ color:(r.safetyColor || COLORS.text), fontWeight:600 }}>{((r.safetyScore || 0)*100).toFixed(0)}% Safe</span>
-                  </div>
-                  
-                  {selectedRoute?.routeId===r.routeId && r.origin && r.destination && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const start = `${r.origin.lat},${r.origin.lng}`;
-                        const end = `${r.destination.lat},${r.destination.lng}`;
-                        // Use a universal maps link that works better on mobile
-                        const url = `https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=walking`;
-                        window.location.href = url; // Redirect directly for better mobile app handoff
-                      }}
-                      style={{
-                        width:'100%', padding:'12px', background:COLORS.text, color:COLORS.bg,
-                        border:'none', fontSize:11, fontWeight:800, cursor:'pointer',
-                        fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase',
-                        boxShadow:'0 4px 12px rgba(255,255,255,0.1)'
-                      }}
-                    >
-                      🚀 START NAVIGATION
-                    </button>
-                  )}
-                </div>
-              ))}
+                  );
+                })}
             </div>
           )}
         </div>
       )}
 
       <div style={{ flex:1, position:'relative' }}>
-        <SafetyMap zones={zones} reports={reports} userLat={userLat} userLng={userLng} route={selectedRoute} />
+        <SafetyMap zones={zones} reports={reports} userLat={userLat} userLng={userLng} route={selectedRoute} routes={routes || []} />
       </div>
 
       <div style={{ padding:'10px 16px', flexShrink:0 }}>
