@@ -19,8 +19,8 @@ function SafetyBadge({ score, expanded, onToggle }) {
         <span style={{ color:COLORS.textMuted, fontSize:12, fontFamily:'JetBrains Mono, monospace' }}>{expanded ? '[-]' : '[+]'}</span>
       </div>
       {expanded && (
-        <div style={{ padding:'0 16px 14px', borderTop:`1px solid ${COLORS.borderMid}` }}>
-          <div style={{ paddingTop:12, display:'flex', flexDirection:'column', gap:6, fontFamily:'JetBrains Mono, monospace' }}>
+        <div style={{ padding:'0 12px 10px', borderTop:`1px solid ${COLORS.borderMid}` }}>
+          <div style={{ paddingTop:10, display:'flex', flexDirection:'column', gap:4, fontFamily:'JetBrains Mono, monospace' }}>
             {[
               { icon:'📊', label:'Incidents',  value:`${score.breakdown.incidentCount} nearby` },
               { icon:'💡', label:'Lighting',   value:`${score.breakdown.streetLampCount} lamps` },
@@ -57,23 +57,40 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
   const [reportForm, setReportForm]       = useState({ category:'', description:'', occurredAt:'' });
   const [reporting, setReporting]         = useState(false);
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const greeting = 'Welcome';
 
   const handleAnalyze = async () => {
     if (!origin || !destination) { addToast('error', 'Enter both origin and destination'); return; }
     setAnalyzing(true);
     try {
-      // Geocoding helper (Nominatim)
+      // 0. Get current city context for better geocoding
+      let cityContext = '';
+      try {
+        const cityRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLng}`);
+        const cityData = await cityRes.json();
+        cityContext = cityData.address?.city || cityData.address?.town || cityData.address?.state || '';
+      } catch (e) { console.warn('Could not get city context', e); }
+
+      // Geocoding helper with local city biasing (Fuzzy + India Locked)
       const geocode = async (query) => {
-        // We add a delay to avoid rate limiting
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+        const fullQuery = cityContext ? `${query}, ${cityContext}` : query;
+        // Bias search to 0.2 degrees (~20km) around user for higher precision
+        const vb = `${userLng - 0.2},${userLat - 0.2},${userLng + 0.2},${userLat + 0.2}`;
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&viewbox=${vb}&countrycodes=in&limit=1`);
         const data = await res.json();
         if (data && data.length > 0) {
           return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), address: data[0].display_name };
         }
+        // Fallback to broader India search
+        const res2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&limit=1`);
+        const data2 = await res2.json();
+        if (data2 && data2.length > 0) {
+          return { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon), address: data2[0].display_name };
+        }
         throw new Error('Location not found');
       };
+
+      const sleep = m => new Promise(r => setTimeout(r, m));
 
       // 1. Get Origin
       let start;
@@ -84,13 +101,18 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
       }
 
       // 2. Get Destination
+      await sleep(400); // Rate limit protection
       let end;
       try { end = await geocode(destination); } catch { addToast('error', `Could not find destination: ${destination}`); setAnalyzing(false); return; }
 
       const res = await apiService.analyzeRoutes(start, end, 'WALKING');
-      setRoutes(res.routes);
-      setSelectedRoute(res.routes[0]);
-      addToast('success', `${res.routes.length} routes found — recommended is ${res.routes[0].safetyLabel}`);
+      if (res && res.routes && res.routes.length > 0) {
+        setRoutes(res.routes);
+        setSelectedRoute(res.routes[0]);
+        addToast('success', `${res.routes.length} routes found — recommended: ${res.routes[0].safetyLabel}`);
+      } else {
+        addToast('warn', 'No routes found for this journey');
+      }
     } catch (err) { 
       console.error(err);
       addToast('error', 'Could not analyze routes'); 
@@ -100,6 +122,8 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
 
   const handleReport = async () => {
     if (!reportForm.category) { addToast('error', 'Please select a category'); return; }
+    if (!userLat || !userLng) { addToast('error', 'GPS location not available'); return; }
+    
     setReporting(true);
     try {
       await apiService.submitReport({ 
@@ -108,88 +132,128 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
         lng: userLng, 
         occurredAt: reportForm.occurredAt || new Date().toISOString() 
       });
-      addToast('success', 'Report submitted. Thank you for keeping your community safe.');
+      addToast('success', 'Report submitted successfully');
       setShowReport(false);
       setReportForm({ category:'', description:'', occurredAt:'' });
       if (onRefresh) onRefresh(); 
-    } catch { addToast('error', 'Failed to submit report'); }
+    } catch (err) { 
+      console.error('Report submission failed', err);
+      addToast('error', 'Failed to submit report. Please try again.'); 
+    }
     setReporting(false);
   };
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', position:'relative', overflow:'hidden', background:COLORS.bg }}>
       {/* Top bar */}
-      <div style={{ padding:'16px 16px 10px', display:'flex', alignItems:'center', gap:12, flexShrink:0, borderBottom:`1px solid ${COLORS.border}` }}>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:11, color:COLORS.textMuted, fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase' }}>{greeting}</div>
-          <h2 style={{ margin:0, fontSize:18, fontWeight:600, color:COLORS.text, fontFamily:'JetBrains Mono, monospace', letterSpacing:0 }}>
-            {user.name.split(' ')[0]}
+      <div style={{ 
+        padding: '12px 16px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        flexShrink: 0, 
+        borderBottom: `1px solid ${COLORS.border}`,
+        background: COLORS.bg,
+        zIndex: 100
+      }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: COLORS.textMuted, fontFamily: 'JetBrains Mono, monospace', textTransform: 'uppercase' }}>{greeting}</div>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: COLORS.text, fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {user?.name?.split(' ')[0] || 'User'}
           </h2>
         </div>
-        <button
-          id="btn-toggle-routes"
-          onClick={() => { setShowRoutes(s => !s); if(showRoutes) setRoutes(null); }}
-          style={{
-            padding:'8px 12px', background: showRoutes ? COLORS.text : COLORS.bg,
-            border: `1px solid ${COLORS.text}`,
-            color: showRoutes ? COLORS.bg : COLORS.text,
-            fontSize:12, cursor:'pointer', fontWeight:600, fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase',
-          }}
-        >
-          {showRoutes ? 'CLOSE' : 'ROUTES'}
-        </button>
+
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+          <button
+            id="btn-toggle-routes"
+            onClick={() => { setShowRoutes(s => !s); if(!showRoutes) { setRoutes(null); setSelectedRoute(null); } }}
+            style={{
+              padding: '10px 20px', 
+              background: COLORS.danger,
+              border: 'none',
+              color: '#fff',
+              fontSize: 12, 
+              cursor: 'pointer', 
+              fontWeight: 800, 
+              fontFamily: 'JetBrains Mono, monospace', 
+              textTransform: 'uppercase',
+              borderRadius: '4px',
+              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {showRoutes ? 'CLOSE' : 'NAVIGATE'}
+          </button>
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          {/* Spacer to keep center button centered */}
+        </div>
       </div>
 
       {/* Route search */}
       {showRoutes && (
-        <div style={{ padding:16, background:COLORS.bgCard, borderBottom:`1px solid ${COLORS.border}`, flexShrink:0 }}>
+        <div style={{ padding:'12px 16px', background:COLORS.bgCard, borderBottom:`1px solid ${COLORS.border}`, flexShrink:0 }}>
           <input id="input-origin" value={origin} onChange={e => setOrigin(e.target.value)} placeholder="From (address or 'Current')"
-            style={{ width:'100%', padding:'10px 12px', background:COLORS.bg, border:`1px solid ${COLORS.borderMid}`, color:COLORS.text, fontSize:13, outline:'none', boxSizing:'border-box', marginBottom:8, fontFamily:'JetBrains Mono, monospace' }} />
+            style={{ width:'100%', padding:'8px 10px', background:COLORS.bg, border:`1px solid ${COLORS.borderMid}`, color:COLORS.text, fontSize:12, outline:'none', boxSizing:'border-box', marginBottom:6, fontFamily:'JetBrains Mono, monospace' }} />
           <input id="input-destination" value={destination} onChange={e => setDestination(e.target.value)} placeholder="To (destination)"
-            style={{ width:'100%', padding:'10px 12px', background:COLORS.bg, border:`1px solid ${COLORS.borderMid}`, color:COLORS.text, fontSize:13, outline:'none', boxSizing:'border-box', marginBottom:12, fontFamily:'JetBrains Mono, monospace' }} />
+            style={{ width:'100%', padding:'8px 10px', background:COLORS.bg, border:`1px solid ${COLORS.borderMid}`, color:COLORS.text, fontSize:12, outline:'none', boxSizing:'border-box', marginBottom:10, fontFamily:'JetBrains Mono, monospace' }} />
           <button id="btn-analyze-routes" onClick={handleAnalyze} disabled={analyzing} style={{
-            width:'100%', padding:'12px', border:`1px solid ${COLORS.text}`,
+            width:'100%', padding:'10px', border:`1px solid ${COLORS.text}`,
             background: analyzing ? COLORS.bgCard : COLORS.text,
-            color: analyzing ? COLORS.textMuted : COLORS.bg, fontSize:13, fontWeight:600, cursor: analyzing ? 'not-allowed' : 'pointer',
+            color: analyzing ? COLORS.textMuted : COLORS.bg, fontSize:12, fontWeight:700, cursor: analyzing ? 'not-allowed' : 'pointer',
             display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase'
           }}>
             {analyzing ? 'ANALYZING...' : 'FIND SAFE ROUTES'}
           </button>
 
-          {routes && (
-            <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-              <div style={{ fontSize:10, color:COLORS.textMuted, fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase' }}>Options</div>
-              {routes.map(r => (
-                <div key={r.routeId} id={`route-${r.routeId}`} onClick={() => setSelectedRoute(r)} style={{
-                  padding:'10px 12px',
+          {routes && Array.isArray(routes) && (
+            <div style={{ 
+              marginTop:10, display:'flex', flexDirection:'column', gap:6, 
+              maxHeight: 180, overflowY: 'auto', paddingRight: 4
+            }}>
+              <div style={{ fontSize:10, color:COLORS.textMuted, fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase', display:'flex', justifyContent:'space-between' }}>
+                <span>{selectedRoute ? 'Selected Route' : 'Options'}</span>
+                {selectedRoute && <span onClick={() => setSelectedRoute(null)} style={{ cursor:'pointer', color:COLORS.text }}>CHANGE</span>}
+              </div>
+              
+              {routes.filter(r => r && (!selectedRoute || r.routeId === selectedRoute.routeId)).map(r => (
+                <div key={r.routeId || Math.random()} id={`route-${r.routeId}`} onClick={() => setSelectedRoute(r)} style={{
+                  padding:'12px',
                   background: selectedRoute?.routeId===r.routeId ? COLORS.bg : COLORS.bgCard,
-                  border: `1px solid ${selectedRoute?.routeId===r.routeId ? r.safetyColor : COLORS.borderMid}`,
-                  cursor:'pointer', fontFamily:'JetBrains Mono, monospace'
+                  border: `1px solid ${selectedRoute?.routeId===r.routeId ? (r.safetyColor || COLORS.safe) : COLORS.borderMid}`,
+                  cursor:'pointer', fontFamily:'JetBrains Mono, monospace',
+                  transition:'all 0.2s ease'
                 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-                    {r.recommended && <span style={{ fontSize:9, border:`1px solid ${COLORS.safe}`, color:COLORS.safe, padding:'2px 4px' }}>REC</span>}
-                    <span style={{ fontSize:9, background:r.safetyColor, color:COLORS.bg, padding:'2px 4px', fontWeight:600 }}>{r.safetyLabel}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+                    {r.recommended && <span style={{ fontSize:8, border:`1px solid ${COLORS.safe}`, color:COLORS.safe, padding:'1px 3px' }}>REC</span>}
+                    <span style={{ fontSize:8, background:(r.safetyColor || COLORS.text), color:COLORS.bg, padding:'1px 3px', fontWeight:600 }}>{r.safetyLabel || 'STANDARD'}</span>
                   </div>
-                  <div style={{ display:'flex', gap:12, fontSize:11, color:COLORS.textMuted, marginBottom:selectedRoute?.routeId===r.routeId ? 10 : 0 }}>
-                    <span>{r.duration.text}</span>
-                    <span>{r.distance.text}</span>
-                    <span style={{ color:r.safetyColor, fontWeight:600 }}>{(r.safetyScore*100).toFixed(0)}%</span>
+                  <div style={{ fontSize:12, color:COLORS.text, marginBottom:4, fontWeight:600 }}>{r.destination?.address?.split(',')[0] || 'Destination'}</div>
+                  <div style={{ display:'flex', gap:12, fontSize:11, color:COLORS.textMuted, marginBottom:selectedRoute?.routeId===r.routeId ? 12 : 0 }}>
+                    <span>{r.duration?.text || 'N/A'}</span>
+                    <span>{r.distance?.text || 'N/A'}</span>
+                    <span style={{ color:(r.safetyColor || COLORS.text), fontWeight:600 }}>{((r.safetyScore || 0)*100).toFixed(0)}% Safe</span>
                   </div>
-                  {selectedRoute?.routeId===r.routeId && (
+                  
+                  {selectedRoute?.routeId===r.routeId && r.origin && r.destination && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         const start = `${r.origin.lat},${r.origin.lng}`;
                         const end = `${r.destination.lat},${r.destination.lng}`;
-                        window.open(`https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=walking`, '_blank');
+                        // Use a universal maps link that works better on mobile
+                        const url = `https://www.google.com/maps/dir/?api=1&origin=${start}&destination=${end}&travelmode=walking`;
+                        window.location.href = url; // Redirect directly for better mobile app handoff
                       }}
                       style={{
-                        width:'100%', padding:'8px', background:COLORS.text, color:COLORS.bg,
-                        border:'none', fontSize:10, fontWeight:700, cursor:'pointer',
-                        fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase'
+                        width:'100%', padding:'12px', background:COLORS.text, color:COLORS.bg,
+                        border:'none', fontSize:11, fontWeight:800, cursor:'pointer',
+                        fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase',
+                        boxShadow:'0 4px 12px rgba(255,255,255,0.1)'
                       }}
                     >
-                      🗺️ OPEN IN GOOGLE MAPS
+                      🚀 START NAVIGATION
                     </button>
                   )}
                 </div>
@@ -211,16 +275,16 @@ export default function HomeScreen({ user, zones, reports, safetyScore, onSOS, o
 
       <div style={{ padding:'0 16px 16px', display:'flex', gap:10, flexShrink:0, background:COLORS.bg }}>
         <button id="btn-report-incident" onClick={() => setShowReport(true)} style={{
-          flex:1, padding:'14px', background:COLORS.bg, border:`1px solid ${COLORS.unsafe}`,
-          color:COLORS.unsafe, fontSize:12, fontWeight:700, cursor:'pointer',
-          fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase', letterSpacing:1
+          flex:1, padding:'12px 8px', background:COLORS.bg, border:`1px solid ${COLORS.unsafe}`,
+          color:COLORS.unsafe, fontSize:11, fontWeight:700, cursor:'pointer',
+          fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase', letterSpacing:0.5
         }}>
-          REPORT INCIDENT
+          REPORT
         </button>
         <button id="btn-emergency-sos" onClick={onSOS} style={{
-          flex:1, padding:'14px', background:COLORS.danger, border:'none',
-          color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer',
-          fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase', letterSpacing:1
+          flex:1, padding:'12px 8px', background:COLORS.danger, border:'none',
+          color:'#fff', fontSize:11, fontWeight:700, cursor:'pointer',
+          fontFamily:'JetBrains Mono, monospace', textTransform:'uppercase', letterSpacing:0.5
         }}>
           EMERGENCY SOS
         </button>

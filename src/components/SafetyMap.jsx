@@ -1,7 +1,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 // Fix Leaflet marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -37,10 +37,15 @@ const CATEGORY_ICONS = {
 // Component to handle map centering and bounds
 function ChangeView({ center, route }) {
   const map = useMap();
+  const hasCentered = useRef(false);
   
   useEffect(() => {
-    if (center) map.setView(center, map.getZoom());
-  }, [center]);
+    // Only auto-center on user ONCE at start, or if we don't have a route
+    if (center && (!hasCentered.current || !route)) {
+      map.setView(center, map.getZoom());
+      hasCentered.current = true;
+    }
+  }, [center, route]);
 
   useEffect(() => {
     if (route && route.encodedPolyline) {
@@ -62,40 +67,32 @@ export default function SafetyMap({ zones = [], reports = [], userLat, userLng, 
     <div style={{ width: '100%', height: '100%', background: '#000', position: 'relative' }}>
       <MapContainer 
         center={center} 
-        zoom={14} 
+        zoom={15} 
         style={{ width: '100%', height: '100%' }}
         zoomControl={false}
       >
         <ChangeView center={center} route={route} />
         
-        {/* Google Maps Tiles (Hybrid/Satellite/Street options) */}
-        {/* lyrs=m is standard street map, lyrs=s is satellite, lyrs=y is hybrid */}
         <TileLayer
           url="http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
           attribution='&copy; Google Maps'
         />
 
-        {/* Safe/Unsafe Zones */}
+        {/* Safe/Unsafe Zones - NO POPUPS here to avoid blocking clicks */}
         {zones.map((zone) => (
           <Circle
             key={zone.id}
             center={[zone.lat, zone.lng]}
             radius={zone.radiusMeters}
+            interactive={false}
             pathOptions={{
               fillColor: '#FF0000',
-              fillOpacity: zone.severity * 0.35,
+              fillOpacity: zone.severity * 0.25,
               color: '#FF0000',
               weight: 1,
             }}
-          >
-            <Popup>
-              <div style={{ color: '#000' }}>
-                <strong>{zone.name}</strong><br />
-                Severity: {zone.severity * 10}/10
-              </div>
-            </Popup>
-          </Circle>
+          />
         ))}
 
         {/* Incident Reports */}

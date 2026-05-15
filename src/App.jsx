@@ -72,28 +72,29 @@ export default function App() {
     };
 
     if (navigator.geolocation) {
-      // Set a timeout so we don't hang if user ignores the prompt
       const geoTimeout = setTimeout(() => {
-        initData(userLocation);
-      }, 5000);
+        if (!userLocation.lat) initData({ lat: 22.7196, lng: 75.8577 });
+      }, 8000);
 
-      navigator.geolocation.getCurrentPosition(
+      const watchId = navigator.geolocation.watchPosition(
         (pos) => {
           clearTimeout(geoTimeout);
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setUserLocation(loc);
-          initData(loc);
+          if (!authChecked) initData(loc); // Only init once
         },
         () => {
           clearTimeout(geoTimeout);
-          initData(userLocation);
+          if (!userLocation.lat) initData({ lat: 22.7196, lng: 75.8577 });
         },
-        { enableHighAccuracy: true, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
+
+      return () => navigator.geolocation.clearWatch(watchId);
     } else {
       initData(userLocation);
     }
-  }, []);
+  }, [authChecked]);
 
   // ── Load data when user authenticates ─────────────────────────────────────
   useEffect(() => {
@@ -270,7 +271,7 @@ export default function App() {
   if (!authChecked) {
     return (
       <div style={{
-        height: '100vh', background: COLORS.bg,
+        height: '100dvh', background: COLORS.bg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexDirection: 'column', gap: 16,
       }}>
@@ -315,14 +316,12 @@ export default function App() {
       {/* Mobile shell */}
       <div style={{
         width: '100%',
-        maxWidth: 480,
+        maxWidth: '100%', // Allow full width on all devices
         margin: '0 auto',
-        height: '100vh',
+        height: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         background: COLORS.bg,
-        borderLeft: `1px solid ${COLORS.border}`,
-        borderRight: `1px solid ${COLORS.border}`,
         position: 'relative',
         overflow: 'hidden',
       }}>
