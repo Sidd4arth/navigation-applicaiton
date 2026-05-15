@@ -381,33 +381,7 @@ export default function App() {
           )}
         </div>
 
-        {/* SOS floating button */}
-        {!sosActive && (
-          <button
-            id="btn-sos-float"
-            title="Hold 5 seconds to activate SOS"
-            onMouseDown={(e) => {
-              e.currentTarget._t = setTimeout(handleSOSTrigger, 5000);
-            }}
-            onMouseUp={(e) => clearTimeout(e.currentTarget._t)}
-            onMouseLeave={(e) => clearTimeout(e.currentTarget._t)}
-            onTouchStart={(e) => {
-              e.currentTarget._t = setTimeout(handleSOSTrigger, 5000);
-            }}
-            onTouchEnd={(e) => clearTimeout(e.currentTarget._t)}
-            onClick={() => addToast('info', 'Hold for 5 seconds to activate SOS')}
-            style={{
-              position:'fixed', bottom:120, right:20, zIndex:2000,
-              width:64, height:64, borderRadius:'50%', background:COLORS.danger,
-              border:'none', color:'#fff', fontSize:20, fontWeight:700, cursor:'pointer',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              boxShadow:'0 8px 24px rgba(239, 68, 68, 0.4)',
-              userSelect:'none', touchAction:'none'
-            }}
-          >
-            SOS
-          </button>
-        )}
+
 
         {/* Bottom nav */}
         <nav style={{
